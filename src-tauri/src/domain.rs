@@ -12,6 +12,7 @@ pub enum Severity {
     Learning,
     Night,
     NoData,
+    Disconnected,
     Unconfigured,
 }
 
@@ -24,6 +25,7 @@ impl Severity {
             Self::Learning => "learning",
             Self::Night => "night",
             Self::NoData => "no_data",
+            Self::Disconnected => "disconnected",
             Self::Unconfigured => "unconfigured",
         }
     }

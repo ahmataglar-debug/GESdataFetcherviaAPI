@@ -7,10 +7,10 @@ const label: Record<Severity, string> = {
   learning: "Öğreniyor",
   night: "Gece örneği",
   no_data: "Veri yok",
+  disconnected: "Bağlantısız",
   unconfigured: "Şema gerekli"
 };
 
 export function StatusBadge({ severity }: { severity: Severity }) {
   return <span className={`status-badge ${severity}`}><i />{label[severity]}</span>;
 }
-

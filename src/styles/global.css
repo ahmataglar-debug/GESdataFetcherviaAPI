@@ -97,7 +97,7 @@ button { color: inherit; }
 .status-badge.normal { color: var(--green); }
 .status-badge.suspicious, .status-badge.learning { color: var(--amber); }
 .status-badge.critical, .status-badge.no_data { color: var(--red); }
-.status-badge.night, .status-badge.unconfigured { color: #aeb7c6; }
+.status-badge.night, .status-badge.disconnected, .status-badge.unconfigured { color: #aeb7c6; }
 .plant-body { padding: 18px; }
 .plant-body h3, .inverter-card h3, .string-card h3 { margin: 0; font-size: 18px; }
 .plant-body p, .inverter-card p, .detail-hero p, .setup-card p, .schema-toolbar p { color: var(--muted); margin: 5px 0 0; font-size: 13px; }
@@ -158,11 +158,11 @@ input:focus, select:focus { border-color: var(--primary-strong); box-shadow: 0 0
 .timezone-box strong, .timezone-box small { display: block; }
 .timezone-box strong { margin: 7px 0 4px; }
 .timezone-box small { color: var(--muted); }
-.schema-table-wrap { margin-bottom: 15px; }
+.schema-table-wrap { margin-bottom: 15px; overflow-x: auto; }
 .schema-inverter { display: flex; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 1px solid rgba(64, 71, 81, .4); }
 .schema-inverter span { color: var(--muted); font-size: 11px; }
 .schema-inverter .schema-add { margin-left: auto; }
-.schema-table { width: 100%; border-collapse: collapse; }
+.schema-table { width: 100%; min-width: 680px; border-collapse: collapse; }
 .schema-table th, .schema-table td { text-align: left; padding: 12px 16px; border-bottom: 1px solid rgba(64, 71, 81, .24); font-size: 12px; }
 .schema-table th { color: #7f8a9b; font-family: "JetBrains Mono", monospace; font-size: 9px; letter-spacing: .08em; }
 .schema-table tr:last-child td { border-bottom: 0; }
@@ -175,15 +175,17 @@ input:focus, select:focus { border-color: var(--primary-strong); box-shadow: 0 0
 @media (max-width: 1100px) {
   .metric-row, .inverter-grid, .string-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .setup-layout { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 760px) {
   .sidebar { width: 74px; padding-inline: 10px; }
-  .brand > div:last-child, .side-nav button:not(.active) { font-size: 0; }
+  .brand { justify-content: center; padding-inline: 0; }
+  .brand > div:last-child { display: none; }
   .side-nav button { font-size: 0; text-align: center; }
   .side-nav button span { width: auto; font-size: 19px; }
   .sidebar-note { display: none; }
   .app-main { margin-left: 74px; }
+  .topbar, .content { padding-inline: 24px; }
+}
+
+@media (max-width: 760px) {
   .topbar, .content { padding-inline: 18px; }
   .topbar { align-items: flex-start; }
   .topbar-actions { flex-direction: column; align-items: stretch; }

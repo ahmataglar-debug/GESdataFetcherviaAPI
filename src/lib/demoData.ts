@@ -33,7 +33,7 @@ export const demoSnapshot: DashboardSnapshot = {
             { id: "s-01", label: "String 01", current: 9.42, voltage: 680.5, connected: true, currentPointId: "13001", voltagePointId: "13002", severity: "normal", reason: "Değerler beklenen aralıkta", learnedDays: 30, sampledAt },
             { id: "s-02", label: "String 02", current: 6.12, voltage: 675.2, connected: true, currentPointId: "13003", voltagePointId: "13004", severity: "suspicious", reason: "Akım, geçmiş ve kardeş stringlere göre düşük", learnedDays: 30, sampledAt },
             { id: "s-03", label: "String 03", current: 9.18, voltage: 678.9, connected: true, currentPointId: "13005", voltagePointId: "13006", severity: "normal", reason: "Değerler beklenen aralıkta", learnedDays: 30, sampledAt },
-            { id: "s-04", label: "String 04", current: 0, voltage: 0, connected: false, currentPointId: "13007", voltagePointId: "13008", severity: "normal", reason: "Şemada bağlantısız", learnedDays: 0, sampledAt }
+            { id: "s-04", label: "String 04", current: 0, voltage: 0, connected: false, currentPointId: "13007", voltagePointId: "13008", severity: "disconnected", reason: "Şemada bağlantısız; alarm değerlendirmesine alınmaz", learnedDays: 0, sampledAt }
           ]
         },
         {

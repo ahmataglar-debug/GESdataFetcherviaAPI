@@ -5,6 +5,7 @@ export type Severity =
   | "learning"
   | "night"
   | "no_data"
+  | "disconnected"
   | "unconfigured";
 
 export interface StringReading {

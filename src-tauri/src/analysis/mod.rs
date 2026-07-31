@@ -25,7 +25,7 @@ pub fn analyze(
         return outcome(Severity::Unconfigured, "GES bağlantı şeması hazırlanmalı");
     }
     if !config.connected {
-        return outcome(Severity::Normal, "String şemada bağlantısız");
+        return outcome(Severity::Disconnected, "String şemada bağlantısız; alarm değerlendirmesine alınmadı");
     }
     let (Some(current), Some(voltage)) = (measurement.current, measurement.voltage) else {
         return outcome(Severity::NoData, "Akım veya gerilim değeri API cevabında yok");
@@ -115,10 +115,17 @@ mod tests {
     }
 
     #[test]
+    fn disconnected_string_is_neutral() {
+        let mut disconnected = config();
+        disconnected.connected = false;
+        let result = analyze(&measurement(0, Some(0.0), Some(0.0), true), &[], &[9.0], &disconnected);
+        assert_eq!(result.severity, Severity::Disconnected);
+    }
+
+    #[test]
     fn suspicious_requires_history_and_peer_confirmation() {
         let history: Vec<_> = (0..30).map(|day| measurement(day, Some(9.0 + (day % 3) as f64 * 0.1), Some(680.0 + (day % 2) as f64), true)).collect();
         let result = analyze(&measurement(31, Some(3.0), Some(610.0), true), &history, &[9.0, 9.2], &config());
         assert_eq!(result.severity, Severity::Suspicious);
     }
 }
-

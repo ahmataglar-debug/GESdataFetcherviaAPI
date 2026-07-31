@@ -326,7 +326,7 @@ impl Repository {
 }
 
 fn parse_severity(value: &str) -> Severity {
-    match value { "normal" => Severity::Normal, "suspicious" => Severity::Suspicious, "critical" => Severity::Critical, "night" => Severity::Night, "no_data" => Severity::NoData, "unconfigured" => Severity::Unconfigured, _ => Severity::Learning }
+    match value { "normal" => Severity::Normal, "suspicious" => Severity::Suspicious, "critical" => Severity::Critical, "night" => Severity::Night, "no_data" => Severity::NoData, "disconnected" => Severity::Disconnected, "unconfigured" => Severity::Unconfigured, _ => Severity::Learning }
 }
 
 fn parse_timezone_source(value: &str) -> TimezoneSource {
