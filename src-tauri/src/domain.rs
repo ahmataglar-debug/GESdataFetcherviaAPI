@@ -37,6 +37,8 @@ pub struct StringReading {
     pub current: Option<f64>,
     pub voltage: Option<f64>,
     pub connected: bool,
+    pub current_point_id: String,
+    pub voltage_point_id: String,
     pub severity: Severity,
     pub reason: String,
     pub learned_days: usize,
@@ -158,9 +160,30 @@ pub struct PlantSchemaUpdate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StringConnectionUpdate {
     pub id: String,
+    pub inverter_id: String,
+    pub position: i64,
+    pub label: String,
+    pub current_point_id: String,
+    pub voltage_point_id: String,
     pub connected: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MappedString {
+    pub id: String,
+    pub inverter_id: String,
+    pub current_point_id: String,
+    pub voltage_point_id: String,
+    pub connected: bool,
+    pub timezone: String,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub current_zero_threshold: f64,
+    pub voltage_zero_threshold: f64,
+    pub schema_configured: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -171,4 +194,3 @@ pub struct Measurement {
     pub sampled_at: DateTime<Utc>,
     pub is_valid_daylight: bool,
 }
-

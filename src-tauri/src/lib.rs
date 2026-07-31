@@ -42,6 +42,21 @@ pub fn run() {
                 use std::os::unix::fs::PermissionsExt;
                 fs::set_permissions(&database_path, fs::Permissions::from_mode(0o600))?;
             }
+            let scheduler_repository = repository.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut first_check = true;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                loop {
+                    if sync_service::connection_is_ready(&scheduler_repository) {
+                        let (last_attempt, was_night) = scheduler_repository.scheduler_state().unwrap_or((None, false));
+                        if matches!(scheduler::decide(chrono::Utc::now(), last_attempt, was_night, first_check), scheduler::SyncDecision::FetchNow) {
+                            let _ = sync_service::synchronize(&scheduler_repository, first_check).await;
+                        }
+                    }
+                    first_check = false;
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+            });
             app.manage(AppState { repository });
             Ok(())
         })

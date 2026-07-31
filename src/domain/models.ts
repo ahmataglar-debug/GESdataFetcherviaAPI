@@ -13,6 +13,8 @@ export interface StringReading {
   current: number | null;
   voltage: number | null;
   connected: boolean;
+  currentPointId: string;
+  voltagePointId: string;
   severity: Severity;
   reason: string;
   learnedDays: number;
@@ -65,6 +67,13 @@ export interface PlantSchemaUpdate {
   plantId: string;
   currentZeroThreshold: number;
   voltageZeroThreshold: number;
-  strings: Array<{ id: string; connected: boolean }>;
+  strings: Array<{
+    id: string;
+    inverterId: string;
+    position: number;
+    label: string;
+    currentPointId: string;
+    voltagePointId: string;
+    connected: boolean;
+  }>;
 }
-

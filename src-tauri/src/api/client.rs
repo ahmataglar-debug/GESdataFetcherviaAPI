@@ -23,7 +23,6 @@ pub struct RemoteDevice {
     pub name: String,
     pub model: String,
     pub serial_number: String,
-    pub device_type: i64,
     pub power_kw: Option<f64>,
 }
 
@@ -137,24 +136,38 @@ impl OpenApiClient {
         Ok(rows.into_iter().filter_map(|row| {
             let device_type = value_as_i64(&row, &["device_type"]).unwrap_or_default();
             if device_type != 1 { return None; }
-            let id = value_as_string(&row, &["uuid", "ps_key", "device_uuid", "id"]);
+            let id = value_as_string(&row, &["ps_key", "uuid", "device_uuid", "id"]);
             (!id.is_empty()).then(|| RemoteDevice {
                 id,
                 name: value_as_string(&row, &["device_name", "name"]),
                 model: value_as_string(&row, &["device_model", "device_model_code", "model"]),
                 serial_number: value_as_string(&row, &["sn", "device_sn"]),
-                device_type,
                 power_kw: value_as_f64(&row, &["active_power", "power"]).map(normalize_kw),
             })
         }).collect())
     }
 
     pub async fn device_realtime_raw(&self, device_keys: &[String], point_ids: &[String]) -> AppResult<Value> {
-        self.post("/openapi/getDeviceRealTimeData", json!({
-            "point_id_list": point_ids,
-            "ps_key_list": device_keys,
-            "device_type": 1
-        })).await
+        let tokens = self.ensure_tokens().await?;
+        let response = self.http
+            .post(format!("{}/openapi/getDeviceRealTimeData", self.config.region.gateway()))
+            .header("x-access-key", &self.secret)
+            .header("Authorization", format!("Bearer {}", tokens.access_token))
+            .header("sys_code", "901")
+            .header("lang", "_en_US")
+            .json(&json!({
+                "appkey": self.config.app_key,
+                "token": tokens.access_token,
+                "point_id_list": point_ids,
+                "ps_key_list": device_keys,
+                "device_type": 1
+            }))
+            .send().await?.error_for_status()?;
+        let value: Value = response.json().await?;
+        if value.get("error").is_some() || matches!(value.get("result_code").and_then(Value::as_str), Some(code) if code != "1") {
+            return Err(AppError::Api(redacted_api_error(&value)));
+        }
+        Ok(value)
     }
 }
 
@@ -180,4 +193,3 @@ fn value_as_i64(value: &Value, keys: &[&str]) -> Option<i64> {
     keys.iter().find_map(|key| value.get(key)).and_then(|item| item.as_i64().or_else(|| item.as_str()?.parse().ok()))
 }
 fn normalize_kw(value: f64) -> f64 { if value.abs() > 10_000.0 { value / 1000.0 } else { value } }
-

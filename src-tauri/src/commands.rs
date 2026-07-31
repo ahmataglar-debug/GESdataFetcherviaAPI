@@ -41,7 +41,7 @@ pub async fn begin_oauth(state: State<'_, AppState>) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn sync_now(state: State<'_, AppState>) -> AppResult<DashboardSnapshot> {
-    synchronize(&state.repository).await
+    synchronize(&state.repository, false).await
 }
 
 #[tauri::command]
@@ -49,6 +49,11 @@ pub fn save_plant_schema(state: State<'_, AppState>, schema: PlantSchemaUpdate) 
     if schema.current_zero_threshold < 0.0 || schema.voltage_zero_threshold < 0.0 {
         return Err(AppError::Configuration("Sıfır eşikleri negatif olamaz".into()));
     }
+    if schema.strings.iter().any(|item| {
+        (!item.current_point_id.is_empty() && !item.current_point_id.chars().all(|value| value.is_ascii_digit()))
+            || (!item.voltage_point_id.is_empty() && !item.voltage_point_id.chars().all(|value| value.is_ascii_digit()))
+    }) {
+        return Err(AppError::Configuration("Akım ve gerilim point ID alanları yalnızca rakam içerebilir".into()));
+    }
     state.repository.save_plant_schema(&schema)
 }
-

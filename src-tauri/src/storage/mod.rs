@@ -5,8 +5,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::{
     domain::{
-        ConnectionState, DashboardSnapshot, InverterSummary, PlantSchemaUpdate, PlantSummary,
-        Severity, StoredApiConfiguration, StringReading, TimezoneSource,
+        ConnectionState, DashboardSnapshot, InverterSummary, MappedString, Measurement,
+        PlantSchemaUpdate, PlantSummary, Severity, StoredApiConfiguration, StringReading,
+        TimezoneSource,
     },
     error::AppResult,
 };
@@ -60,16 +61,17 @@ impl Repository {
         Ok(value.and_then(|raw| serde_json::from_str(&raw).ok()))
     }
 
-    pub fn mark_sync(&self, completed_at: DateTime<Utc>, next_sync_at: DateTime<Utc>) -> AppResult<()> {
+    pub fn mark_sync(&self, completed_at: DateTime<Utc>, next_sync_at: DateTime<Utc>, was_night: bool) -> AppResult<()> {
         let connection = self.connect()?;
         connection.execute(
-            "INSERT INTO scheduler_state(id, last_attempt_at, last_success_at, next_sync_at)
-             VALUES(1, ?1, ?1, ?2)
+            "INSERT INTO scheduler_state(id, last_attempt_at, last_success_at, next_sync_at, last_attempt_was_night)
+             VALUES(1, ?1, ?1, ?2, ?3)
              ON CONFLICT(id) DO UPDATE SET
                last_attempt_at = excluded.last_attempt_at,
                last_success_at = excluded.last_success_at,
-               next_sync_at = excluded.next_sync_at",
-            params![completed_at.to_rfc3339(), next_sync_at.to_rfc3339()],
+               next_sync_at = excluded.next_sync_at,
+               last_attempt_was_night = excluded.last_attempt_was_night",
+            params![completed_at.to_rfc3339(), next_sync_at.to_rfc3339(), was_night as i32],
         )?;
         Ok(())
     }
@@ -128,12 +130,97 @@ impl Repository {
         )?;
         for item in &schema.strings {
             transaction.execute(
-                "UPDATE strings SET connected = ?2 WHERE id = ?1",
-                params![item.id, item.connected as i32],
+                "INSERT INTO strings(id, inverter_id, position, label, current_point_id, voltage_point_id, connected)
+                 VALUES(?1, ?2, ?3, ?4, NULLIF(?5, ''), NULLIF(?6, ''), ?7)
+                 ON CONFLICT(id) DO UPDATE SET inverter_id=excluded.inverter_id,
+                   position=excluded.position, label=excluded.label,
+                   current_point_id=excluded.current_point_id,
+                   voltage_point_id=excluded.voltage_point_id, connected=excluded.connected",
+                params![item.id, item.inverter_id, item.position, item.label, item.current_point_id, item.voltage_point_id, item.connected as i32],
             )?;
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    pub fn mapped_strings(&self) -> AppResult<Vec<MappedString>> {
+        let connection = self.connect()?;
+        let mut statement = connection.prepare(
+            "SELECT s.id, s.inverter_id, s.current_point_id,
+                    s.voltage_point_id, s.connected, p.timezone, p.latitude, p.longitude,
+                    COALESCE(ps.current_zero_threshold, 0.15),
+                    COALESCE(ps.voltage_zero_threshold, 10.0), ps.plant_id IS NOT NULL
+             FROM strings s
+             JOIN inverters i ON i.id = s.inverter_id
+             JOIN plants p ON p.id = i.plant_id
+             LEFT JOIN plant_schemas ps ON ps.plant_id = p.id
+             WHERE s.current_point_id IS NOT NULL AND s.current_point_id != ''
+               AND s.voltage_point_id IS NOT NULL AND s.voltage_point_id != ''
+             ORDER BY s.inverter_id, s.position",
+        )?;
+        let rows = statement.query_map([], |row| Ok(MappedString {
+            id: row.get(0)?, inverter_id: row.get(1)?, current_point_id: row.get(2)?, voltage_point_id: row.get(3)?, connected: row.get(4)?,
+            timezone: row.get(5)?, latitude: row.get(6)?, longitude: row.get(7)?,
+            current_zero_threshold: row.get(8)?, voltage_zero_threshold: row.get(9)?, schema_configured: row.get(10)?,
+        }))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn save_measurement(&self, measurement: &Measurement) -> AppResult<i64> {
+        let connection = self.connect()?;
+        connection.execute(
+            "INSERT INTO measurements(string_id, current, voltage, sampled_at, is_valid_daylight)
+             VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![measurement.string_id, measurement.current, measurement.voltage, measurement.sampled_at.to_rfc3339(), measurement.is_valid_daylight as i32],
+        )?;
+        Ok(connection.last_insert_rowid())
+    }
+
+    pub fn save_live_reading(&self, measurement: &Measurement) -> AppResult<()> {
+        self.connect()?.execute(
+            "INSERT INTO latest_readings(string_id, current, voltage, sampled_at)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(string_id) DO UPDATE SET current=excluded.current,
+               voltage=excluded.voltage, sampled_at=excluded.sampled_at",
+            params![measurement.string_id, measurement.current, measurement.voltage, measurement.sampled_at.to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn measurement_history(&self, string_id: &str, before: DateTime<Utc>, limit: usize) -> AppResult<Vec<Measurement>> {
+        let connection = self.connect()?;
+        let mut statement = connection.prepare(
+            "SELECT current, voltage, sampled_at, is_valid_daylight
+             FROM measurements WHERE string_id=?1 AND sampled_at < ?2 AND is_valid_daylight=1
+             ORDER BY sampled_at DESC LIMIT ?3",
+        )?;
+        let rows = statement.query_map(params![string_id, before.to_rfc3339(), limit as i64], |row| {
+            let raw: String = row.get(2)?;
+            Ok(Measurement {
+                string_id: string_id.to_string(), current: row.get(0)?, voltage: row.get(1)?,
+                sampled_at: DateTime::parse_from_rfc3339(&raw).map(|value| value.with_timezone(&Utc)).unwrap_or(before),
+                is_valid_daylight: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn save_analysis(&self, string_id: &str, measurement_id: i64, severity: &Severity, reason: &str) -> AppResult<()> {
+        self.connect()?.execute(
+            "INSERT INTO analysis_results(string_id, measurement_id, severity, reason, analyzed_at)
+             VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![string_id, measurement_id, severity.as_str(), reason, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn scheduler_state(&self) -> AppResult<(Option<DateTime<Utc>>, bool)> {
+        let row = self.connect()?.query_row(
+            "SELECT last_attempt_at, last_attempt_was_night FROM scheduler_state WHERE id=1",
+            [],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?)),
+        ).optional()?.unwrap_or((None, false));
+        Ok((row.0.and_then(|value| DateTime::parse_from_rfc3339(&value).ok()).map(|value| value.with_timezone(&Utc)), row.1))
     }
 
     pub fn dashboard_snapshot(&self, configured: bool, connected: bool) -> AppResult<DashboardSnapshot> {
@@ -212,7 +299,8 @@ impl Repository {
 
     fn strings_for(connection: &Connection, inverter_id: &str) -> AppResult<Vec<StringReading>> {
         let mut statement = connection.prepare(
-            "SELECT s.id, s.label, s.connected, m.current, m.voltage, m.sampled_at,
+            "SELECT s.id, s.label, s.connected, COALESCE(s.current_point_id, ''), COALESCE(s.voltage_point_id, ''),
+                    COALESCE(l.current, m.current), COALESCE(l.voltage, m.voltage), COALESCE(l.sampled_at, m.sampled_at),
                     COALESCE(a.severity, CASE WHEN EXISTS(SELECT 1 FROM plant_schemas ps
                       JOIN inverters i ON i.plant_id = ps.plant_id WHERE i.id = s.inverter_id)
                       THEN 'learning' ELSE 'unconfigured' END),
@@ -220,16 +308,17 @@ impl Repository {
                     (SELECT COUNT(DISTINCT date(sampled_at)) FROM measurements h
                       WHERE h.string_id = s.id AND h.is_valid_daylight = 1)
              FROM strings s
+             LEFT JOIN latest_readings l ON l.string_id = s.id
              LEFT JOIN measurements m ON m.id = (SELECT id FROM measurements lm WHERE lm.string_id=s.id ORDER BY sampled_at DESC LIMIT 1)
              LEFT JOIN analysis_results a ON a.id = (SELECT id FROM analysis_results la WHERE la.string_id=s.id ORDER BY analyzed_at DESC LIMIT 1)
              WHERE s.inverter_id = ?1 ORDER BY s.position",
         )?;
         let rows = statement.query_map([inverter_id], |row| {
-            let severity: String = row.get(6)?;
+            let severity: String = row.get(8)?;
             Ok(StringReading {
-                id: row.get(0)?, label: row.get(1)?, connected: row.get(2)?, current: row.get(3)?, voltage: row.get(4)?,
-                sampled_at: row.get::<_, Option<String>>(5)?.and_then(|value| DateTime::parse_from_rfc3339(&value).ok()).map(|value| value.with_timezone(&Utc)),
-                severity: parse_severity(&severity), reason: row.get(7)?, learned_days: row.get::<_, i64>(8)? as usize,
+                id: row.get(0)?, label: row.get(1)?, connected: row.get(2)?, current_point_id: row.get(3)?, voltage_point_id: row.get(4)?, current: row.get(5)?, voltage: row.get(6)?,
+                sampled_at: row.get::<_, Option<String>>(7)?.and_then(|value| DateTime::parse_from_rfc3339(&value).ok()).map(|value| value.with_timezone(&Utc)),
+                severity: parse_severity(&severity), reason: row.get(9)?, learned_days: row.get::<_, i64>(10)? as usize,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -262,4 +351,3 @@ fn aggregate_status<'a>(statuses: impl Iterator<Item = &'a Severity>) -> Severit
     }
     best
 }
-

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS measurements (
 );
 CREATE INDEX IF NOT EXISTS idx_measurements_string_time ON measurements(string_id, sampled_at DESC);
 
+CREATE TABLE IF NOT EXISTS latest_readings (
+  string_id TEXT PRIMARY KEY REFERENCES strings(id) ON DELETE CASCADE,
+  current REAL,
+  voltage REAL,
+  sampled_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS analysis_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   string_id TEXT NOT NULL REFERENCES strings(id) ON DELETE CASCADE,
