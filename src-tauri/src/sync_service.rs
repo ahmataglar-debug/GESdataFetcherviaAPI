@@ -21,6 +21,9 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
     let plants = client.plants().await?;
     let plant_ids: Vec<_> = plants.iter().map(|plant| plant.id.clone()).collect();
     let details = client.plant_details(&plant_ids).await.unwrap_or_default();
+    let now = Utc::now();
+    let mut warnings = Vec::new();
+    let mut inverter_ids = Vec::new();
 
     for listed in plants {
         let detail = details.iter().find(|item| item.id == listed.id);
@@ -33,6 +36,7 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
         let cloud_alarm_count = detail.map(|item| item.cloud_alarm_count).unwrap_or_default().max(listed.cloud_alarm_count);
         repository.upsert_plant(&listed.id, name, latitude, longitude, timezone, timezone_source, power_kw, cloud_status, cloud_alarm_count)?;
         for device in client.devices(&listed.id).await? {
+            inverter_ids.push(device.id.clone());
             repository.upsert_inverter(
                 &device.id,
                 &listed.id,
@@ -47,7 +51,43 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
         }
     }
 
-    let now = Utc::now();
+    let mut realtime_api_failed = false;
+    match client.plant_realtime_power(&plant_ids).await {
+        Ok(powers) => {
+            for (plant_id, power_kw) in powers {
+                repository.update_plant_power(&plant_id, power_kw)?;
+            }
+        }
+        Err(_) => realtime_api_failed = true,
+    }
+
+    match client.inverter_realtime(&inverter_ids).await {
+        Ok(inverters) => {
+            for (inverter_id, realtime) in inverters {
+                repository.update_inverter_realtime(&inverter_id, realtime.power_kw, realtime.strings.len())?;
+                for string in realtime.strings {
+                    let string_id = repository.upsert_discovered_string(
+                        &inverter_id,
+                        string.point.position,
+                        string.point.current,
+                        string.point.voltage,
+                    )?;
+                    repository.save_live_reading(&Measurement {
+                        string_id,
+                        current: string.current,
+                        voltage: string.voltage,
+                        sampled_at: now,
+                        is_valid_daylight: false,
+                    })?;
+                }
+            }
+        }
+        Err(_) => realtime_api_failed = true,
+    }
+    if realtime_api_failed {
+        warnings.push("iSolarCloud gerçek zamanlı veri servisi bu uygulama için yanıt vermedi. Developer Portal > Service API management bölümünde Real-time Data / Device Real-time Data API yetkisini ekleyin; santral gücü ve string ölçümleri bu yetkiye bağlıdır.".to_string());
+    }
+
     let (last_attempt, last_attempt_was_night) = repository.scheduler_state()?;
     let persist_analysis_sample = matches!(decide(now, last_attempt, last_attempt_was_night, application_restarted), SyncDecision::FetchNow);
     let mappings = repository.mapped_strings()?;
@@ -56,7 +96,6 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
         by_inverter.entry(mapping.inverter_id.clone()).or_default().push(mapping);
     }
 
-    let mut warnings = Vec::new();
     let mut daylight_flags = Vec::new();
     for (inverter_id, strings) in by_inverter {
         let mut point_ids: Vec<String> = strings.iter().flat_map(|item| [item.current_point_id.clone(), item.voltage_point_id.clone()]).collect();

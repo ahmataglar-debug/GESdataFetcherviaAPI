@@ -1,6 +1,9 @@
 use chrono::Utc;
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
+
+use super::points::{inverter_point_batches, StringPoint, INVERTER_ACTIVE_POWER, PLANT_ACTIVE_POWER, STRING_POINTS};
 
 use crate::{
     domain::{CloudStatus, StoredApiConfiguration},
@@ -29,6 +32,19 @@ pub struct RemoteDevice {
     pub cloud_status: CloudStatus,
     pub cloud_alarm_count: usize,
     pub discovered_string_count: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteStringReading {
+    pub point: StringPoint,
+    pub current: Option<f64>,
+    pub voltage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RemoteInverterRealtime {
+    pub power_kw: Option<f64>,
+    pub strings: Vec<RemoteStringReading>,
 }
 
 #[derive(Clone)]
@@ -185,6 +201,59 @@ impl OpenApiClient {
         }
         Ok(value)
     }
+
+    pub async fn inverter_realtime(&self, device_keys: &[String]) -> AppResult<BTreeMap<String, RemoteInverterRealtime>> {
+        let mut points_by_device = BTreeMap::<String, serde_json::Map<String, Value>>::new();
+        for point_ids in inverter_point_batches() {
+            for device_batch in device_keys.chunks(20) {
+                let raw = self.device_realtime_raw(device_batch, &point_ids).await?;
+                for row in raw.pointer("/result_data/device_point_list").and_then(Value::as_array).into_iter().flatten() {
+                    let Some(points) = row.get("device_point").unwrap_or(row).as_object() else { continue; };
+                    let key = value_as_string(row.get("device_point").unwrap_or(row), &["ps_key"]);
+                    if !key.is_empty() {
+                        points_by_device.entry(key).or_default().extend(points.clone());
+                    }
+                }
+            }
+        }
+        Ok(points_by_device.into_iter().map(|(key, points)| {
+            let power_kw = point_value(&points, INVERTER_ACTIVE_POWER).map(|value| value / 1000.0);
+            let strings = STRING_POINTS.iter().filter_map(|point| {
+                let current = point_value(&points, point.current);
+                let voltage = point_value(&points, point.voltage);
+                if current.is_none() && voltage.is_none() { return None; }
+                Some(RemoteStringReading {
+                    point: *point,
+                    current,
+                    voltage,
+                })
+            }).collect();
+            (key, RemoteInverterRealtime { power_kw, strings })
+        }).collect())
+    }
+
+    pub async fn plant_realtime_power(&self, plant_ids: &[String]) -> AppResult<BTreeMap<String, f64>> {
+        let mut result = BTreeMap::new();
+        for plant_batch in plant_ids.chunks(20) {
+            let keys: Vec<_> = plant_batch.iter().map(|id| format!("{id}_11_0_0")).collect();
+            let raw = self.device_realtime_raw(&keys, &[PLANT_ACTIVE_POWER.to_string()]).await?;
+            for row in raw.pointer("/result_data/device_point_list").and_then(Value::as_array).into_iter().flatten() {
+                let Some(points) = row.get("device_point").unwrap_or(row).as_object() else { continue; };
+                let key = points.get("ps_id")
+                    .map(|value| value.to_string().trim_matches('"').to_string())
+                    .or_else(|| points.get("ps_key").and_then(Value::as_str).and_then(|value| value.split('_').next()).map(str::to_string))
+                    .unwrap_or_default();
+                if let Some(power_w) = point_value(points, PLANT_ACTIVE_POWER) {
+                    result.insert(key, power_w / 1000.0);
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn point_value(points: &serde_json::Map<String, Value>, point_id: &str) -> Option<f64> {
+    points.get(&format!("p{point_id}")).and_then(number_from_value)
 }
 
 fn tokens_from_value(value: Value) -> AppResult<OAuthTokens> {
@@ -237,7 +306,13 @@ fn number_from_value(value: &Value) -> Option<f64> {
 }
 
 fn plant_cloud_status(value: &Value) -> CloudStatus {
-    match value_as_i64(value, &["ps_status", "status"]) {
+    match value_as_i64(value, &["ps_fault_status"]) {
+        Some(1) => return CloudStatus::Fault,
+        Some(2) => return CloudStatus::Alarm,
+        Some(3) => return CloudStatus::Normal,
+        _ => {}
+    }
+    match value_as_i64(value, &["online_status", "ps_status", "status"]) {
         Some(0) => CloudStatus::Offline,
         Some(1) => CloudStatus::Normal,
         Some(3) => CloudStatus::Commissioning,
@@ -254,14 +329,13 @@ fn plant_alarm_count(value: &Value) -> usize {
 }
 
 fn device_cloud_status(value: &Value) -> CloudStatus {
-    if value_as_i64(value, &["device_status"]) == Some(0) {
+    if value_as_i64(value, &["dev_status", "device_status"]) == Some(0) {
         return CloudStatus::Offline;
     }
-    match value_as_i64(value, &["fault_status", "device_state", "status"]) {
-        Some(0) => CloudStatus::Offline,
+    match value_as_i64(value, &["dev_fault_status", "fault_status", "device_state", "status"]) {
         Some(1) => CloudStatus::Fault,
         Some(2) => CloudStatus::Alarm,
-        Some(3) | Some(4) => CloudStatus::Normal,
+        Some(4) => CloudStatus::Normal,
         Some(6) => CloudStatus::Commissioning,
         _ => CloudStatus::Unknown,
     }

@@ -25,8 +25,9 @@ Türkiye kurulumları için `Avrupa / Türkiye` bölgesi seçilmelidir. Santral 
 ## İlk kullanım
 
 1. OpenAPI ayarlarını kaydedin ve tarayıcı yetkilendirmesini tamamlayın.
-2. İlk senkronizasyonla GES ve inverter listesini alın.
-3. **GES şemaları** ekranında her inverter stringi için modelin akım ve gerilim point ID değerlerini girin.
+2. Developer Portal'daki **Service API management** sekmesinde **Device Real-time Data / Real-time Data** servisini uygulamaya ekleyin. Bu servis ekli değilse temel santral ve inverter listesi gelir; üretim gücü ile string akım/gerilim point'leri gelmez.
+3. İlk senkronizasyonla GES, inverter ve desteklenen string point'lerini alın.
+4. **GES şemaları** ekranında otomatik bulunan string bağlantılarını doğrulayın; kırmızı sıfıra-yakın uyarısı yalnızca bu şema onaylandıktan sonra etkinleşir.
 4. Fiziksel olarak boş veya ucu takılmamış stringleri `Boş / bağlantısız` işaretleyin.
 5. GES’e uygun sıfıra yakın akım/gerilim eşiklerini kaydedin.
 6. Yeniden senkronize edin.

@@ -132,6 +132,41 @@ impl Repository {
         Ok(())
     }
 
+    pub fn update_plant_power(&self, plant_id: &str, power_kw: f64) -> AppResult<()> {
+        self.connect()?.execute(
+            "UPDATE plants SET power_kw=?2, updated_at=?3 WHERE id=?1",
+            params![plant_id, power_kw, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_inverter_realtime(&self, inverter_id: &str, power_kw: Option<f64>, string_count: usize) -> AppResult<()> {
+        self.connect()?.execute(
+            "UPDATE inverters SET power_kw=COALESCE(?2, power_kw), discovered_string_count=?3, updated_at=?4 WHERE id=?1",
+            params![inverter_id, power_kw, string_count as i64, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_discovered_string(
+        &self,
+        inverter_id: &str,
+        position: usize,
+        current_point_id: &str,
+        voltage_point_id: &str,
+    ) -> AppResult<String> {
+        let id = format!("{inverter_id}:string:{position}");
+        self.connect()?.execute(
+            "INSERT INTO strings(id, inverter_id, position, label, current_point_id, voltage_point_id, connected)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, 1)
+             ON CONFLICT(inverter_id, position) DO UPDATE SET
+               current_point_id=COALESCE(strings.current_point_id, excluded.current_point_id),
+               voltage_point_id=COALESCE(strings.voltage_point_id, excluded.voltage_point_id)",
+            params![id, inverter_id, position as i64, format!("String {position}"), current_point_id, voltage_point_id],
+        )?;
+        Ok(id)
+    }
+
     pub fn save_plant_schema(&self, schema: &PlantSchemaUpdate) -> AppResult<()> {
         let mut connection = self.connect()?;
         let transaction = connection.transaction()?;
