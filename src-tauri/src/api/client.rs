@@ -182,7 +182,7 @@ impl OpenApiClient {
     pub async fn device_realtime_raw(&self, device_keys: &[String], point_ids: &[String]) -> AppResult<Value> {
         let tokens = self.ensure_tokens().await?;
         let response = self.http
-            .post(format!("{}/openapi/getDeviceRealTimeData", self.config.region.gateway()))
+            .post(format!("{}/openapi/platform/getDeviceRealTimeData", self.config.region.gateway()))
             .header("x-access-key", &self.secret)
             .header("Authorization", format!("Bearer {}", tokens.access_token))
             .header("sys_code", "901")
@@ -192,7 +192,8 @@ impl OpenApiClient {
                 "token": tokens.access_token,
                 "point_id_list": point_ids,
                 "ps_key_list": device_keys,
-                "device_type": 1
+                "device_type": "1",
+                "is_get_point_dict": "1"
             }))
             .send().await?.error_for_status()?;
         let value: Value = response.json().await?;
@@ -235,10 +236,13 @@ impl OpenApiClient {
     pub async fn plant_realtime_power(&self, plant_ids: &[String]) -> AppResult<BTreeMap<String, f64>> {
         let mut result = BTreeMap::new();
         for plant_batch in plant_ids.chunks(20) {
-            let keys: Vec<_> = plant_batch.iter().map(|id| format!("{id}_11_0_0")).collect();
-            let raw = self.device_realtime_raw(&keys, &[PLANT_ACTIVE_POWER.to_string()]).await?;
+            let raw = self.post("/openapi/platform/getPowerStationRealTimeData", json!({
+                "ps_id_list": plant_batch,
+                "point_id_list": [PLANT_ACTIVE_POWER],
+                "is_get_point_dict": "1"
+            })).await?;
             for row in raw.pointer("/result_data/device_point_list").and_then(Value::as_array).into_iter().flatten() {
-                let Some(points) = row.get("device_point").unwrap_or(row).as_object() else { continue; };
+                let Some(points) = row.as_object() else { continue; };
                 let key = points.get("ps_id")
                     .map(|value| value.to_string().trim_matches('"').to_string())
                     .or_else(|| points.get("ps_key").and_then(Value::as_str).and_then(|value| value.split('_').next()).map(str::to_string))
@@ -306,6 +310,9 @@ fn number_from_value(value: &Value) -> Option<f64> {
 }
 
 fn plant_cloud_status(value: &Value) -> CloudStatus {
+    if value_as_i64(value, &["online_status"]) == Some(0) {
+        return CloudStatus::Offline;
+    }
     match value_as_i64(value, &["ps_fault_status"]) {
         Some(1) => return CloudStatus::Fault,
         Some(2) => return CloudStatus::Alarm,

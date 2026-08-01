@@ -51,14 +51,13 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
         }
     }
 
-    let mut realtime_api_failed = false;
     match client.plant_realtime_power(&plant_ids).await {
         Ok(powers) => {
             for (plant_id, power_kw) in powers {
                 repository.update_plant_power(&plant_id, power_kw)?;
             }
         }
-        Err(_) => realtime_api_failed = true,
+        Err(error) => warnings.push(format!("Santral gerçek zamanlı güç verisi alınamadı: {error}")),
     }
 
     match client.inverter_realtime(&inverter_ids).await {
@@ -82,10 +81,7 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
                 }
             }
         }
-        Err(_) => realtime_api_failed = true,
-    }
-    if realtime_api_failed {
-        warnings.push("iSolarCloud gerçek zamanlı veri servisi bu uygulama için yanıt vermedi. Developer Portal > Service API management bölümünde Real-time Data / Device Real-time Data API yetkisini ekleyin; santral gücü ve string ölçümleri bu yetkiye bağlıdır.".to_string());
+        Err(_) => warnings.push("Santral gücü alınabiliyor ancak cihaz bazlı gerçek zamanlı API mevcut planda yanıt vermiyor. String akım/gerilim verileri için Device Real-time Data erişimi olan plan veya tarayıcı tabanlı veri kaynağı gerekir.".to_string()),
     }
 
     let (last_attempt, last_attempt_was_night) = repository.scheduler_state()?;
