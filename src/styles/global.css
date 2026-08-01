@@ -73,7 +73,7 @@ button { color: inherit; }
 .banner-error { color: #ffd5d1; border: 1px solid rgba(255, 112, 104, .35); background: rgba(255, 112, 104, .1); }
 .empty-state { min-height: 360px; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--muted); text-align: center; }
 
-.metric-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 32px; }
+.metric-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 32px; }
 .metric-row article { padding: 18px; border-radius: 12px; background: linear-gradient(145deg, rgba(30, 41, 59, .72), rgba(15, 23, 42, .82)); border: 1px solid rgba(64, 71, 81, .48); }
 .metric-row span, .plant-stats span, .inverter-data span, .string-values span, .hero-power span, .timezone-box > span { display: block; color: #7f8a9b; font-family: "JetBrains Mono", monospace; font-size: 10px; letter-spacing: .08em; }
 .metric-row strong { display: block; font-size: 29px; margin: 9px 0 4px; letter-spacing: -.04em; }
@@ -98,6 +98,14 @@ button { color: inherit; }
 .status-badge.suspicious, .status-badge.learning { color: var(--amber); }
 .status-badge.critical, .status-badge.no_data { color: var(--red); }
 .status-badge.night, .status-badge.disconnected, .status-badge.unconfigured { color: #aeb7c6; }
+.cloud-status-badge { display: inline-flex; align-items: center; gap: 7px; width: max-content; max-width: 100%; padding: 5px 8px; border: 1px solid currentColor; border-radius: 999px; background: rgba(11, 19, 38, .86); font-family: "JetBrains Mono", monospace; font-size: 9px; font-weight: 600; letter-spacing: .035em; text-transform: uppercase; }
+.cloud-status-badge i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.cloud-normal { color: var(--green); }
+.cloud-alarm { color: var(--amber); }
+.cloud-fault { color: var(--red); }
+.cloud-offline, .cloud-unknown { color: #aeb7c6; }
+.cloud-commissioning { color: var(--primary); }
+.plant-visual .cloud-status-badge { position: absolute; right: 15px; top: 13px; }
 .plant-body { padding: 18px; }
 .plant-body h3, .inverter-card h3, .string-card h3 { margin: 0; font-size: 18px; }
 .plant-body p, .inverter-card p, .detail-hero p, .setup-card p, .schema-toolbar p { color: var(--muted); margin: 5px 0 0; font-size: 13px; }
@@ -105,6 +113,12 @@ button { color: inherit; }
 .plant-stats strong, .inverter-data strong { display: block; margin-top: 7px; font-size: 22px; }
 .plant-stats small, .inverter-data small, .string-values small, .hero-power small { font-size: 12px; color: var(--muted); font-weight: 500; }
 .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid rgba(64, 71, 81, .35); }
+.analysis-countdown { margin: -2px 0 16px; padding: 12px; border-radius: 9px; background: rgba(154, 203, 255, .055); border: 1px solid rgba(154, 203, 255, .14); }
+.analysis-countdown > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.analysis-countdown span, .analysis-countdown small { color: var(--muted); font-size: 10px; }
+.analysis-countdown strong { color: var(--primary); font-size: 11px; }
+.analysis-countdown small { display: block; margin-top: 7px; }
+.analysis-countdown.compact { margin: 0 0 14px; padding: 10px; }
 .schema-ok, .schema-missing { font-family: "JetBrains Mono", monospace; font-size: 10px; }
 .schema-ok { color: var(--green); }
 .schema-missing { color: var(--amber); }
@@ -117,6 +131,7 @@ button { color: inherit; }
 .card-title-row > div:nth-child(2), .card-title-row > div:first-child:not(.device-icon) { flex: 1; }
 .device-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: rgba(154, 203, 255, .12); color: var(--primary); font-size: 20px; }
 .inverter-data { padding: 15px 0; border-block: 1px solid rgba(64, 71, 81, .35); }
+.inverter-card > .cloud-status-badge { margin-top: 14px; }
 .card-action { width: 100%; background: rgba(154, 203, 255, .08); border-color: rgba(154, 203, 255, .25); color: var(--primary); }
 
 .detail-hero { display: flex; justify-content: space-between; align-items: end; padding: 21px; margin-bottom: 18px; border-radius: 14px; border: 1px solid rgba(64, 71, 81, .4); background: linear-gradient(100deg, rgba(0, 119, 190, .17), rgba(23, 31, 51, .55)); }

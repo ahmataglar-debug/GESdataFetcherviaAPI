@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 
 use crate::{
-    domain::StoredApiConfiguration,
+    domain::{CloudStatus, StoredApiConfiguration},
     error::{AppError, AppResult},
     secrets::{OAuthTokens, SecretStore},
 };
@@ -15,6 +15,8 @@ pub struct RemotePlant {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub power_kw: Option<f64>,
+    pub cloud_status: CloudStatus,
+    pub cloud_alarm_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +26,9 @@ pub struct RemoteDevice {
     pub model: String,
     pub serial_number: String,
     pub power_kw: Option<f64>,
+    pub cloud_status: CloudStatus,
+    pub cloud_alarm_count: usize,
+    pub discovered_string_count: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -95,7 +100,11 @@ impl OpenApiClient {
     }
 
     pub async fn plants(&self) -> AppResult<Vec<RemotePlant>> {
-        let list = self.post("/openapi/platform/queryPowerStationList", json!({"page": 1, "size": 100})).await?;
+        let list = self.post("/openapi/platform/queryPowerStationList", json!({
+            "page": 1,
+            "size": 100,
+            "column_fill_list": ["ps_name", "ps_status", "design_capacity", "current_power", "today_energy"]
+        })).await?;
         let rows = list.pointer("/result_data/pageList").and_then(Value::as_array).cloned().unwrap_or_default();
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
@@ -106,7 +115,9 @@ impl OpenApiClient {
                 name: value_as_string(&row, &["ps_name", "name"]),
                 latitude: value_as_f64(&row, &["latitude"]),
                 longitude: value_as_f64(&row, &["longitude"]),
-                power_kw: value_as_f64(&row, &["curr_power", "power"]).map(normalize_kw),
+                power_kw: measured_kw(&row, &["/dynamic_column/current_power", "/current_power", "/curr_power", "/real_time_power", "/power"]),
+                cloud_status: plant_cloud_status(&row),
+                cloud_alarm_count: plant_alarm_count(&row),
             });
         }
         Ok(result)
@@ -123,7 +134,9 @@ impl OpenApiClient {
                 name: value_as_string(&row, &["ps_name", "name"]),
                 latitude: value_as_f64(&row, &["latitude"]),
                 longitude: value_as_f64(&row, &["longitude"]),
-                power_kw: value_as_f64(&row, &["curr_power", "power"]).map(normalize_kw),
+                power_kw: measured_kw(&row, &["/dynamic_column/current_power", "/current_power", "/curr_power", "/real_time_power", "/power"]),
+                cloud_status: plant_cloud_status(&row),
+                cloud_alarm_count: plant_alarm_count(&row),
             })
         }).collect())
     }
@@ -142,7 +155,10 @@ impl OpenApiClient {
                 name: value_as_string(&row, &["device_name", "name"]),
                 model: value_as_string(&row, &["device_model", "device_model_code", "model"]),
                 serial_number: value_as_string(&row, &["sn", "device_sn"]),
-                power_kw: value_as_f64(&row, &["active_power", "power"]).map(normalize_kw),
+                power_kw: measured_kw(&row, &["/dynamic_column/current_power", "/total_active_power", "/active_power", "/device_power", "/power", "/p24"]),
+                cloud_status: device_cloud_status(&row),
+                cloud_alarm_count: device_alarm_count(&row),
+                discovered_string_count: value_as_usize(&row, &["string_count", "string_num", "pv_string_count", "pv_input_count", "input_count", "dc_input_count"]),
             })
         }).collect())
     }
@@ -192,4 +208,94 @@ fn value_as_f64(value: &Value, keys: &[&str]) -> Option<f64> {
 fn value_as_i64(value: &Value, keys: &[&str]) -> Option<i64> {
     keys.iter().find_map(|key| value.get(key)).and_then(|item| item.as_i64().or_else(|| item.as_str()?.parse().ok()))
 }
-fn normalize_kw(value: f64) -> f64 { if value.abs() > 10_000.0 { value / 1000.0 } else { value } }
+fn value_as_usize(value: &Value, keys: &[&str]) -> Option<usize> {
+    value_as_i64(value, keys).and_then(|item| usize::try_from(item).ok()).filter(|item| *item > 0)
+}
+
+fn measured_kw(value: &Value, pointers: &[&str]) -> Option<f64> {
+    pointers.iter().find_map(|pointer| value.pointer(pointer).and_then(measurement_to_kw))
+}
+
+fn measurement_to_kw(value: &Value) -> Option<f64> {
+    let (number, unit) = if let Some(object) = value.as_object() {
+        let number = ["value", "val", "data"].iter().find_map(|key| object.get(*key)).and_then(number_from_value)?;
+        let unit = ["unit", "unit_name"].iter().find_map(|key| object.get(*key)).and_then(Value::as_str).unwrap_or("");
+        (number, unit)
+    } else if let Some(raw) = value.as_str() {
+        let number = raw.split_whitespace().next()?.replace(',', ".").parse().ok()?;
+        let unit = raw.split_whitespace().nth(1).unwrap_or("");
+        (number, unit)
+    } else {
+        (value.as_f64()?, "")
+    };
+    let unit = unit.to_ascii_lowercase();
+    Some(if unit == "mw" { number * 1000.0 } else if unit == "w" { number / 1000.0 } else if unit.is_empty() && number.abs() > 10_000.0 { number / 1000.0 } else { number })
+}
+
+fn number_from_value(value: &Value) -> Option<f64> {
+    value.as_f64().or_else(|| value.as_str()?.replace(',', ".").parse().ok())
+}
+
+fn plant_cloud_status(value: &Value) -> CloudStatus {
+    match value_as_i64(value, &["ps_status", "status"]) {
+        Some(0) => CloudStatus::Offline,
+        Some(1) => CloudStatus::Normal,
+        Some(3) => CloudStatus::Commissioning,
+        Some(4) => CloudStatus::Fault,
+        Some(5) => CloudStatus::Alarm,
+        _ => CloudStatus::Unknown,
+    }
+}
+
+fn plant_alarm_count(value: &Value) -> usize {
+    value_as_usize(value, &["alarm_count", "fault_count", "warning_count"])
+        .or_else(|| value.pointer("/fault_map/more_count").and_then(number_from_value).map(|count| count.max(0.0) as usize + 1))
+        .unwrap_or_else(|| usize::from(matches!(plant_cloud_status(value), CloudStatus::Alarm | CloudStatus::Fault)))
+}
+
+fn device_cloud_status(value: &Value) -> CloudStatus {
+    if value_as_i64(value, &["device_status"]) == Some(0) {
+        return CloudStatus::Offline;
+    }
+    match value_as_i64(value, &["fault_status", "device_state", "status"]) {
+        Some(0) => CloudStatus::Offline,
+        Some(1) => CloudStatus::Fault,
+        Some(2) => CloudStatus::Alarm,
+        Some(3) | Some(4) => CloudStatus::Normal,
+        Some(6) => CloudStatus::Commissioning,
+        _ => CloudStatus::Unknown,
+    }
+}
+
+fn device_alarm_count(value: &Value) -> usize {
+    value_as_usize(value, &["alarm_count", "fault_count", "warning_count"])
+        .unwrap_or_else(|| usize::from(matches!(device_cloud_status(value), CloudStatus::Alarm | CloudStatus::Fault)))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn parses_nested_plant_power_and_alarm_from_official_shape() {
+        let row = json!({
+            "ps_status": 5,
+            "fault_map": {"more_count": 0},
+            "dynamic_column": {"current_power": {"value": "1.37", "unit": "MW"}}
+        });
+        assert_eq!(measured_kw(&row, &["/dynamic_column/current_power"]), Some(1370.0));
+        assert_eq!(plant_cloud_status(&row), CloudStatus::Alarm);
+        assert_eq!(plant_alarm_count(&row), 1);
+    }
+
+    #[test]
+    fn parses_device_status_power_and_discovered_strings() {
+        let row = json!({"device_status": 1, "fault_status": 2, "total_active_power": "197.90 kW", "string_num": "24"});
+        assert_eq!(measured_kw(&row, &["/total_active_power"]), Some(197.9));
+        assert_eq!(device_cloud_status(&row), CloudStatus::Alarm);
+        assert_eq!(device_alarm_count(&row), 1);
+        assert_eq!(value_as_usize(&row, &["string_num"]), Some(24));
+    }
+}

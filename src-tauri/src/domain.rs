@@ -5,6 +5,30 @@ pub const REQUIRED_BASELINE_DAYS: usize = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum CloudStatus {
+    Normal,
+    Alarm,
+    Fault,
+    Offline,
+    Commissioning,
+    Unknown,
+}
+
+impl CloudStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Alarm => "alarm",
+            Self::Fault => "fault",
+            Self::Offline => "offline",
+            Self::Commissioning => "commissioning",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum Severity {
     Normal,
     Suspicious,
@@ -55,7 +79,12 @@ pub struct InverterSummary {
     pub model: String,
     pub serial_number: String,
     pub status: Severity,
+    pub cloud_status: CloudStatus,
+    pub cloud_alarm_count: usize,
     pub power_kw: Option<f64>,
+    pub discovered_string_count: Option<usize>,
+    pub learned_days: usize,
+    pub days_until_analysis: usize,
     pub strings: Vec<StringReading>,
 }
 
@@ -74,10 +103,14 @@ pub struct PlantSummary {
     pub id: String,
     pub name: String,
     pub status: Severity,
+    pub cloud_status: CloudStatus,
+    pub cloud_alarm_count: usize,
     pub power_kw: Option<f64>,
     pub inverter_count: usize,
-    pub string_count: usize,
+    pub string_count: Option<usize>,
     pub alert_count: usize,
+    pub learned_days: usize,
+    pub days_until_analysis: usize,
     pub schema_configured: bool,
     pub timezone: String,
     pub timezone_source: TimezoneSource,

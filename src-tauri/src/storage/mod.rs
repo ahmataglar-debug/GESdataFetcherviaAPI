@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::{
     domain::{
         ConnectionState, DashboardSnapshot, InverterSummary, MappedString, Measurement,
-        PlantSchemaUpdate, PlantSummary, Severity, StoredApiConfiguration, StringReading,
+        CloudStatus, PlantSchemaUpdate, PlantSummary, Severity, StoredApiConfiguration, StringReading,
         TimezoneSource,
     },
     error::AppResult,
@@ -36,6 +36,11 @@ impl Repository {
     fn migrate(&self) -> AppResult<()> {
         let connection = self.connect()?;
         connection.execute_batch(include_str!("schema.sql"))?;
+        ensure_column(&connection, "plants", "cloud_status", "TEXT NOT NULL DEFAULT 'unknown'")?;
+        ensure_column(&connection, "plants", "cloud_alarm_count", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&connection, "inverters", "cloud_status", "TEXT NOT NULL DEFAULT 'unknown'")?;
+        ensure_column(&connection, "inverters", "cloud_alarm_count", "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&connection, "inverters", "discovered_string_count", "INTEGER")?;
         Ok(())
     }
 
@@ -85,15 +90,18 @@ impl Repository {
         timezone: &str,
         timezone_source: &str,
         power_kw: Option<f64>,
+        cloud_status: &CloudStatus,
+        cloud_alarm_count: usize,
     ) -> AppResult<()> {
         self.connect()?.execute(
-            "INSERT INTO plants(id, name, latitude, longitude, timezone, timezone_source, power_kw, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO plants(id, name, latitude, longitude, timezone, timezone_source, power_kw, cloud_status, cloud_alarm_count, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET name=excluded.name, latitude=excluded.latitude,
                longitude=excluded.longitude, timezone=excluded.timezone,
                timezone_source=excluded.timezone_source, power_kw=excluded.power_kw,
+               cloud_status=excluded.cloud_status, cloud_alarm_count=excluded.cloud_alarm_count,
                updated_at=excluded.updated_at",
-            params![id, name, latitude, longitude, timezone, timezone_source, power_kw, Utc::now().to_rfc3339()],
+            params![id, name, latitude, longitude, timezone, timezone_source, power_kw, cloud_status.as_str(), cloud_alarm_count as i64, Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
@@ -106,14 +114,20 @@ impl Repository {
         model: &str,
         serial_number: &str,
         power_kw: Option<f64>,
+        cloud_status: &CloudStatus,
+        cloud_alarm_count: usize,
+        discovered_string_count: Option<usize>,
     ) -> AppResult<()> {
         self.connect()?.execute(
-            "INSERT INTO inverters(id, plant_id, name, model, serial_number, power_kw, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO inverters(id, plant_id, name, model, serial_number, power_kw, cloud_status, cloud_alarm_count, discovered_string_count, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET plant_id=excluded.plant_id, name=excluded.name,
                model=excluded.model, serial_number=excluded.serial_number,
-               power_kw=excluded.power_kw, updated_at=excluded.updated_at",
-            params![id, plant_id, name, model, serial_number, power_kw, Utc::now().to_rfc3339()],
+               power_kw=excluded.power_kw, cloud_status=excluded.cloud_status,
+               cloud_alarm_count=excluded.cloud_alarm_count,
+               discovered_string_count=COALESCE(excluded.discovered_string_count, inverters.discovered_string_count),
+               updated_at=excluded.updated_at",
+            params![id, plant_id, name, model, serial_number, power_kw, cloud_status.as_str(), cloud_alarm_count as i64, discovered_string_count.map(|value| value as i64), Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
@@ -236,7 +250,8 @@ impl Repository {
 
         let mut plant_statement = connection.prepare(
             "SELECT p.id, p.name, p.latitude, p.longitude, p.timezone, p.timezone_source,
-                    p.power_kw, EXISTS(SELECT 1 FROM plant_schemas s WHERE s.plant_id = p.id)
+                    p.power_kw, EXISTS(SELECT 1 FROM plant_schemas s WHERE s.plant_id = p.id),
+                    p.cloud_status, p.cloud_alarm_count
              FROM plants p ORDER BY p.name",
         )?;
         let plant_rows = plant_statement.query_map([], |row| {
@@ -244,24 +259,32 @@ impl Repository {
                 row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<f64>>(2)?,
                 row.get::<_, Option<f64>>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?,
                 row.get::<_, Option<f64>>(6)?, row.get::<_, bool>(7)?,
+                row.get::<_, String>(8)?, row.get::<_, i64>(9)?,
             ))
         })?;
 
         let mut plants = Vec::new();
         for row in plant_rows {
-            let (id, name, latitude, longitude, timezone, source, power_kw, schema_configured) = row?;
+            let (id, name, latitude, longitude, timezone, source, power_kw, schema_configured, cloud_status, cloud_alarm_count) = row?;
             let inverters = Self::inverters_for(&connection, &id)?;
-            let string_count = inverters.iter().map(|item| item.strings.len()).sum();
+            let configured_string_count: usize = inverters.iter().map(|item| item.strings.len()).sum();
+            let discovered_string_count: usize = inverters.iter().filter_map(|item| item.discovered_string_count).sum();
+            let string_count = if configured_string_count > 0 { Some(configured_string_count) } else if discovered_string_count > 0 { Some(discovered_string_count) } else { None };
             let alert_count = inverters.iter().flat_map(|item| &item.strings).filter(|item| matches!(item.severity, Severity::Suspicious | Severity::Critical)).count();
-            let status = aggregate_status(inverters.iter().map(|item| &item.status));
+            let status = if !schema_configured { Severity::Unconfigured } else { aggregate_status(inverters.iter().map(|item| &item.status)) };
+            let learned_days = inverters.iter().filter(|item| !item.strings.is_empty()).map(|item| item.learned_days).min().unwrap_or(0);
             plants.push(PlantSummary {
                 id,
                 name,
                 status,
+                cloud_status: parse_cloud_status(&cloud_status),
+                cloud_alarm_count: cloud_alarm_count.max(0) as usize,
                 power_kw,
                 inverter_count: inverters.len(),
                 string_count,
                 alert_count,
+                learned_days,
+                days_until_analysis: crate::domain::REQUIRED_BASELINE_DAYS.saturating_sub(learned_days),
                 schema_configured,
                 timezone,
                 timezone_source: parse_timezone_source(&source),
@@ -282,17 +305,28 @@ impl Repository {
 
     fn inverters_for(connection: &Connection, plant_id: &str) -> AppResult<Vec<InverterSummary>> {
         let mut statement = connection.prepare(
-            "SELECT id, name, model, serial_number, power_kw FROM inverters WHERE plant_id = ?1 ORDER BY name",
+            "SELECT id, name, model, serial_number, power_kw, cloud_status, cloud_alarm_count, discovered_string_count
+             FROM inverters WHERE plant_id = ?1 ORDER BY name",
         )?;
         let rows = statement.query_map([plant_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, Option<f64>>(4)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, Option<f64>>(4)?, row.get::<_, String>(5)?, row.get::<_, i64>(6)?, row.get::<_, Option<i64>>(7)?))
         })?;
         let mut result = Vec::new();
         for row in rows {
-            let (id, name, model, serial_number, power_kw) = row?;
+            let (id, name, model, serial_number, power_kw, cloud_status, cloud_alarm_count, discovered_string_count) = row?;
             let strings = Self::strings_for(connection, &id)?;
-            let status = aggregate_status(strings.iter().map(|item| &item.severity));
-            result.push(InverterSummary { id, name, model, serial_number, status, power_kw, strings });
+            let status = if strings.is_empty() { Severity::Unconfigured } else { aggregate_status(strings.iter().map(|item| &item.severity)) };
+            let learned_days = strings.iter().filter(|item| item.connected).map(|item| item.learned_days).min().unwrap_or(0);
+            result.push(InverterSummary {
+                id, name, model, serial_number, status,
+                cloud_status: parse_cloud_status(&cloud_status),
+                cloud_alarm_count: cloud_alarm_count.max(0) as usize,
+                power_kw,
+                discovered_string_count: discovered_string_count.and_then(|value| usize::try_from(value).ok()).filter(|value| *value > 0),
+                learned_days,
+                days_until_analysis: crate::domain::REQUIRED_BASELINE_DAYS.saturating_sub(learned_days),
+                strings,
+            });
         }
         Ok(result)
     }
@@ -333,6 +367,17 @@ fn parse_timezone_source(value: &str) -> TimezoneSource {
     match value { "coordinates" => TimezoneSource::Coordinates, "online_lookup" => TimezoneSource::OnlineLookup, "turkey_default" => TimezoneSource::TurkeyDefault, _ => TimezoneSource::Unknown }
 }
 
+fn parse_cloud_status(value: &str) -> CloudStatus {
+    match value {
+        "normal" => CloudStatus::Normal,
+        "alarm" => CloudStatus::Alarm,
+        "fault" => CloudStatus::Fault,
+        "offline" => CloudStatus::Offline,
+        "commissioning" => CloudStatus::Commissioning,
+        _ => CloudStatus::Unknown,
+    }
+}
+
 fn aggregate_status<'a>(statuses: impl Iterator<Item = &'a Severity>) -> Severity {
     let mut best = Severity::Normal;
     for status in statuses {
@@ -350,4 +395,16 @@ fn aggregate_status<'a>(statuses: impl Iterator<Item = &'a Severity>) -> Severit
         };
     }
     best
+}
+
+fn ensure_column(connection: &Connection, table: &str, column: &str, definition: &str) -> AppResult<()> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+    connection.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"))?;
+    Ok(())
 }

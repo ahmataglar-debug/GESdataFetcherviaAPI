@@ -18,14 +18,26 @@ export function SchemaEditor({ plants, busy, onSave }: SchemaEditorProps) {
   useEffect(() => {
     if (!plant) return;
     setConnected(Object.fromEntries(plant.inverters.flatMap((inverter) => inverter.strings.map((item) => [item.id, item.connected]))));
-    setDrafts(Object.fromEntries(plant.inverters.map((inverter) => [inverter.id, inverter.strings.map((item, index) => ({
-      id: item.id,
-      position: index + 1,
-      label: item.label,
-      currentPointId: item.currentPointId,
-      voltagePointId: item.voltagePointId,
-      connected: item.connected
-    }))])));
+    setDrafts(Object.fromEntries(plant.inverters.map((inverter) => {
+      const rows = inverter.strings.length > 0
+        ? inverter.strings.map((item, index) => ({
+            id: item.id,
+            position: index + 1,
+            label: item.label,
+            currentPointId: item.currentPointId,
+            voltagePointId: item.voltagePointId,
+            connected: item.connected
+          }))
+        : Array.from({ length: inverter.discoveredStringCount ?? 0 }, (_, index) => ({
+            id: `${inverter.id}:string:${index + 1}`,
+            position: index + 1,
+            label: `String ${String(index + 1).padStart(2, "0")}`,
+            currentPointId: "",
+            voltagePointId: "",
+            connected: true
+          }));
+      return [inverter.id, rows];
+    })));
   }, [plant]);
 
   if (!plant) return <div className="empty-state">OpenAPI’den GES geldikten sonra şema hazırlanabilir.</div>;

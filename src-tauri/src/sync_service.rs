@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{
     analysis::{analyze, AnalysisConfig},
     api::OpenApiClient,
-    domain::{DashboardSnapshot, MappedString, Measurement},
+    domain::{CloudStatus, DashboardSnapshot, MappedString, Measurement},
     error::{AppError, AppResult},
     secrets::SecretStore,
     scheduler::{decide, SyncDecision},
@@ -29,9 +29,21 @@ pub async fn synchronize(repository: &Repository, application_restarted: bool) -
         let (timezone, timezone_source) = inferred_timezone(latitude, longitude);
         let name = detail.filter(|item| !item.name.is_empty()).map(|item| item.name.as_str()).unwrap_or(&listed.name);
         let power_kw = detail.and_then(|item| item.power_kw).or(listed.power_kw);
-        repository.upsert_plant(&listed.id, name, latitude, longitude, timezone, timezone_source, power_kw)?;
+        let cloud_status = detail.filter(|item| item.cloud_status != CloudStatus::Unknown).map(|item| &item.cloud_status).unwrap_or(&listed.cloud_status);
+        let cloud_alarm_count = detail.map(|item| item.cloud_alarm_count).unwrap_or_default().max(listed.cloud_alarm_count);
+        repository.upsert_plant(&listed.id, name, latitude, longitude, timezone, timezone_source, power_kw, cloud_status, cloud_alarm_count)?;
         for device in client.devices(&listed.id).await? {
-            repository.upsert_inverter(&device.id, &listed.id, &device.name, &device.model, &device.serial_number, device.power_kw)?;
+            repository.upsert_inverter(
+                &device.id,
+                &listed.id,
+                &device.name,
+                &device.model,
+                &device.serial_number,
+                device.power_kw,
+                &device.cloud_status,
+                device.cloud_alarm_count,
+                device.discovered_string_count,
+            )?;
         }
     }
 

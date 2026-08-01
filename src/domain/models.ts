@@ -8,6 +8,8 @@ export type Severity =
   | "disconnected"
   | "unconfigured";
 
+export type CloudStatus = "normal" | "alarm" | "fault" | "offline" | "commissioning" | "unknown";
+
 export interface StringReading {
   id: string;
   label: string;
@@ -28,7 +30,12 @@ export interface InverterSummary {
   model: string;
   serialNumber: string;
   status: Severity;
+  cloudStatus: CloudStatus;
+  cloudAlarmCount: number;
   powerKw: number | null;
+  discoveredStringCount: number | null;
+  learnedDays: number;
+  daysUntilAnalysis: number;
   strings: StringReading[];
 }
 
@@ -36,10 +43,14 @@ export interface PlantSummary {
   id: string;
   name: string;
   status: Severity;
+  cloudStatus: CloudStatus;
+  cloudAlarmCount: number;
   powerKw: number | null;
   inverterCount: number;
-  stringCount: number;
+  stringCount: number | null;
   alertCount: number;
+  learnedDays: number;
+  daysUntilAnalysis: number;
   schemaConfigured: boolean;
   timezone: string;
   timezoneSource: "coordinates" | "online_lookup" | "turkey_default" | "unknown";

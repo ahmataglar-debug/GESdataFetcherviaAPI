@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS plants (
   timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul',
   timezone_source TEXT NOT NULL DEFAULT 'turkey_default',
   power_kw REAL,
+  cloud_status TEXT NOT NULL DEFAULT 'unknown',
+  cloud_alarm_count INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
 
@@ -21,6 +23,9 @@ CREATE TABLE IF NOT EXISTS inverters (
   model TEXT NOT NULL DEFAULT '',
   serial_number TEXT NOT NULL DEFAULT '',
   power_kw REAL,
+  cloud_status TEXT NOT NULL DEFAULT 'unknown',
+  cloud_alarm_count INTEGER NOT NULL DEFAULT 0,
+  discovered_string_count INTEGER,
   updated_at TEXT NOT NULL
 );
 

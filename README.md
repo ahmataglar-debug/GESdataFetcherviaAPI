@@ -38,6 +38,9 @@ iSolarCloud point ID değerleri inverter modeline ve OpenAPI hesabına göre de�
 - Kırmızı alarm yalnızca şemada bağlı bir string, geçerli gündüz/üretim koşulunda hem akım hem gerilim sıfır eşiklerinin altındaysa oluşur.
 - Gece ölçümü uyarı üretmez ve 30 günlük öğrenme veri setine katılmaz.
 - Sarı şüpheli alarm en az **30 ayrı geçerli gündüz örneği** tamamlandıktan sonra etkinleşir. Değerin hem aynı yerel saat aralığındaki geçmişten hem de çalışan kardeş stringlerden sapması gerekir.
+- GES ve inverterlerin iSolarCloud üzerindeki alarm/fault durumu ayrıca gösterilir; bu durum uygulamanın akım/gerilimden ürettiği sarı ve kırmızı analiz uyarılarını değiştirmez.
+- Öğrenme göstergesi, 30 geçerli gündüz örneğine kaç gün kaldığını GES ve inverter kartlarında gösterir.
+- String sayısı OpenAPI yanıtında bulunursa otomatik gösterilir. Servis bu alanı vermiyorsa yanlışlıkla `0` yazmak yerine `—` gösterilir; şema kaydedildiğinde kesin sayı şemadan alınır.
 - Normal periyot 24 saattir. Uygulama yeniden açıldığında gecikme 12 saati geçtiyse yakalama senkronizasyonu yapılır. Gece ölçümünden sonra yeniden deneme süresi 8 saate düşer.
 - Manuel senkronizasyon canlı görünümü her zaman günceller; henüz periyot dolmadıysa tarihsel analiz örneğini çoğaltmaz.
 
