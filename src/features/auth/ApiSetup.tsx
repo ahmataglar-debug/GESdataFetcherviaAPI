@@ -12,7 +12,6 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
   const [config, setConfig] = useState<ApiConfiguration>({
     appKey: "",
     secretKey: "",
-    applicationId: "",
     region: "europe",
     redirectUri: "http://127.0.0.1:42831/oauth/callback"
   });
@@ -38,7 +37,6 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
         <p>Buraya iSolarCloud parolanızı değil, OAuth etkin uygulamanızın yenilenmiş geliştirici anahtarlarını girin.</p>
         <label>AppKey<input value={config.appKey} onChange={(event) => setConfig({ ...config, appKey: event.target.value.trim() })} autoComplete="off" required /></label>
         <label>Secret key<input type="password" value={config.secretKey} onChange={(event) => setConfig({ ...config, secretKey: event.target.value.trim() })} autoComplete="new-password" required /></label>
-        <label>Application ID<input value={config.applicationId} onChange={(event) => setConfig({ ...config, applicationId: event.target.value.trim() })} autoComplete="off" required /></label>
         <label>Bölge
           <select value={config.region} onChange={(event) => setConfig({ ...config, region: event.target.value as ApiConfiguration["region"] })}>
             <option value="europe">Avrupa / Türkiye</option>
@@ -67,4 +65,3 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
     </section>
   );
 }
-

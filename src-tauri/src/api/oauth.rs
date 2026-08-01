@@ -17,7 +17,8 @@ impl OAuthService {
     pub fn authorization_url(config: &StoredApiConfiguration) -> String {
         let (site, cloud_id) = config.region.authorization_site();
         let redirect = url::form_urlencoded::byte_serialize(config.redirect_uri.as_bytes()).collect::<String>();
-        format!("{site}/#/authorized-app?cloudId={cloud_id}&applicationId={}&redirectUrl={redirect}", config.application_id)
+        let app_key = url::form_urlencoded::byte_serialize(config.app_key.as_bytes()).collect::<String>();
+        format!("{site}/#/authorized-app?cloudId={cloud_id}&applicationId={app_key}&redirectUrl={redirect}")
     }
 
     pub async fn authorize(config: StoredApiConfiguration) -> AppResult<()> {
@@ -45,5 +46,25 @@ impl OAuthService {
         let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", html.len(), html);
         stream.write_all(response.as_bytes()).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::{ApiRegion, StoredApiConfiguration};
+
+    use super::OAuthService;
+
+    #[test]
+    fn app_key_is_used_as_the_oauth_application_id() {
+        let config = StoredApiConfiguration {
+            app_key: "APP KEY/1".into(),
+            region: ApiRegion::Europe,
+            redirect_uri: "http://127.0.0.1:42831/oauth/callback".into(),
+        };
+
+        let url = OAuthService::authorization_url(&config);
+        assert!(url.contains("applicationId=APP+KEY%2F1"), "{url}");
+        assert!(url.contains("cloudId=3"));
     }
 }

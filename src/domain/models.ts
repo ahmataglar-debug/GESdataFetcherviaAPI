@@ -59,7 +59,6 @@ export interface DashboardSnapshot {
 export interface ApiConfiguration {
   appKey: string;
   secretKey: string;
-  applicationId: string;
   region: "europe" | "international" | "china" | "australia";
   redirectUri: string;
 }

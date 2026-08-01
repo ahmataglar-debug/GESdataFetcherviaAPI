@@ -18,7 +18,7 @@ Developer Portal uygulamasında OAuth yetkilendirmesini açın ve redirect URI o
 http://127.0.0.1:42831/oauth/callback
 ```
 
-Uygulamada **OpenAPI bağlantısı** ekranına yenilenmiş AppKey, Secret key ve Application ID değerlerini girin. Kaydettikten sonra **Tarayıcıda yetkilendir** düğmesi gerçek iSolarCloud giriş/yetki sayfasını varsayılan tarayıcıda açar. Yerel callback yalnızca kısa süreli yetkilendirme kodunu alır.
+Uygulamada **OpenAPI bağlantısı** ekranına yenilenmiş AppKey ve Secret key değerlerini girin. Portal ayrı bir Application ID göstermediği için OAuth isteğindeki `applicationId` parametresinde AppKey kullanılır. Kaydettikten sonra **Tarayıcıda yetkilendir** düğmesi gerçek iSolarCloud giriş/yetki sayfasını varsayılan tarayıcıda açar. Yerel callback yalnızca kısa süreli yetkilendirme kodunu alır.
 
 Türkiye kurulumları için `Avrupa / Türkiye` bölgesi seçilmelidir. Santral koordinatları Türkiye içinde olduğunda saat dilimi `Europe/Istanbul` olarak belirlenir; koordinat yoksa Türkiye varsayımı kullanılır.
 

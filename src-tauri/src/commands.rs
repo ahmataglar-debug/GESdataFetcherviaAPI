@@ -17,8 +17,8 @@ pub fn get_dashboard_snapshot(state: State<'_, AppState>) -> AppResult<Dashboard
 
 #[tauri::command]
 pub fn save_api_configuration(state: State<'_, AppState>, config: ApiConfigurationInput) -> AppResult<()> {
-    if config.app_key.trim().is_empty() || config.application_id.trim().is_empty() || config.secret_key.trim().is_empty() {
-        return Err(AppError::Configuration("AppKey, Secret key ve Application ID zorunludur".into()));
+    if config.app_key.trim().is_empty() || config.secret_key.trim().is_empty() {
+        return Err(AppError::Configuration("AppKey ve Secret key zorunludur".into()));
     }
     let redirect = url::Url::parse(&config.redirect_uri)?;
     if redirect.host_str() != Some("127.0.0.1") && redirect.host_str() != Some("localhost") {
@@ -27,7 +27,6 @@ pub fn save_api_configuration(state: State<'_, AppState>, config: ApiConfigurati
     SecretStore::save_api_secret(config.secret_key.trim())?;
     state.repository.save_api_configuration(&StoredApiConfiguration {
         app_key: config.app_key.trim().into(),
-        application_id: config.application_id.trim().into(),
         region: config.region,
         redirect_uri: config.redirect_uri,
     })
