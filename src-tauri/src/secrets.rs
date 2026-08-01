@@ -46,4 +46,11 @@ impl SecretStore {
             Err(error) => Err(error.into()),
         }
     }
+
+    pub fn clear_tokens() -> AppResult<()> {
+        match Self::entry(OAUTH_TOKEN_ACCOUNT)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
 }

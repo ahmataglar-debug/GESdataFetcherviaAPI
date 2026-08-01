@@ -139,6 +139,7 @@ impl ApiRegion {
 pub struct ApiConfigurationInput {
     pub app_key: String,
     pub secret_key: String,
+    pub application_id: String,
     pub region: ApiRegion,
     pub redirect_uri: String,
 }
@@ -146,6 +147,7 @@ pub struct ApiConfigurationInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredApiConfiguration {
     pub app_key: String,
+    pub application_id: String,
     pub region: ApiRegion,
     pub redirect_uri: String,
 }

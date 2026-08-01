@@ -12,6 +12,7 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
   const [config, setConfig] = useState<ApiConfiguration>({
     appKey: "",
     secretKey: "",
+    applicationId: "",
     region: "europe",
     redirectUri: "http://127.0.0.1:42831/oauth/callback"
   });
@@ -29,6 +30,16 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
     }
   };
 
+  const authorize = async () => {
+    setMessage("Yerel callback sunucusu açılıyor; yetkilendirmeyi 15 dakika içinde tamamlayın.");
+    try {
+      await onAuthorize();
+      setMessage("OAuth yetkilendirmesi tamamlandı ve tokenlar güvenli kasaya kaydedildi.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   return (
     <section className="setup-layout">
       <form className="setup-card" onSubmit={(event) => void submit(event)}>
@@ -37,6 +48,7 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
         <p>Buraya iSolarCloud parolanızı değil, OAuth etkin uygulamanızın yenilenmiş geliştirici anahtarlarını girin.</p>
         <label>AppKey<input value={config.appKey} onChange={(event) => setConfig({ ...config, appKey: event.target.value.trim() })} autoComplete="off" required /></label>
         <label>Secret key<input type="password" value={config.secretKey} onChange={(event) => setConfig({ ...config, secretKey: event.target.value.trim() })} autoComplete="new-password" required /></label>
+        <label>Application ID<input inputMode="numeric" placeholder="Developer Portal URL’sindeki id (örn. 5843)" value={config.applicationId} onChange={(event) => setConfig({ ...config, applicationId: event.target.value.replace(/\D/g, "") })} autoComplete="off" required /></label>
         <label>Bölge
           <select value={config.region} onChange={(event) => setConfig({ ...config, region: event.target.value as ApiConfiguration["region"] })}>
             <option value="europe">Avrupa / Türkiye</option>
@@ -49,7 +61,7 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
         {message && <div className="form-message">{message}</div>}
         <div className="form-actions">
           <button className="button primary" disabled={busy}>Ayarları güvenle kaydet</button>
-          <button className="button secondary" type="button" disabled={busy || state === "not_configured"} onClick={() => void onAuthorize()}>Tarayıcıda yetkilendir</button>
+          <button className="button secondary" type="button" disabled={busy || state === "not_configured"} onClick={() => void authorize()}>Tarayıcıda yetkilendir</button>
         </div>
       </form>
       <aside className="security-card">
@@ -59,6 +71,7 @@ export function ApiSetup({ state, busy, onSave, onAuthorize }: ApiSetupProps) {
           <li>iSolarCloud şifresi uygulama tarafından alınmaz.</li>
           <li>Secret key ve OAuth tokenları işletim sistemi kasasında tutulur.</li>
           <li>React katmanına ham anahtar veya token gönderilmez.</li>
+          <li>Application ID, Developer Portal uygulama URL’sindeki <code>id</code> değeridir; AppKey değildir.</li>
           <li>Paylaşılan eski anahtarı kullanmadan önce yenileyin.</li>
         </ul>
       </aside>

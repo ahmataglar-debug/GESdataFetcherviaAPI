@@ -16,6 +16,8 @@ pub enum AppError {
     Api(String),
     #[error("OAuth yetkilendirmesi zaman aşımına uğradı")]
     OAuthTimeout,
+    #[error("OAuth callback sunucusu başlatılamadı: {0}")]
+    OAuthCallback(String),
 }
 
 impl serde::Serialize for AppError {
@@ -28,4 +30,3 @@ impl serde::Serialize for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
-

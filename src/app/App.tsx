@@ -95,6 +95,20 @@ export function App() {
     }
   };
 
+  const handleOAuth = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await beginOAuth();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title =
     page === "plants"
       ? "GES Genel Görünüm"
@@ -134,10 +148,7 @@ export function App() {
               state={snapshot.connectionState}
               busy={busy}
               onSave={handleApiSave}
-              onAuthorize={async () => {
-                await beginOAuth();
-                await load();
-              }}
+              onAuthorize={handleOAuth}
             />
           ) : (
             <div className="empty-state">
